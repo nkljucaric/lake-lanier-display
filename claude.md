@@ -17,7 +17,7 @@ A desk display that shows live Lake Lanier water level, trend, inflow/outflow, a
 ## Data sources
 | Data | Source | Notes |
 |---|---|---|
-| Lake level (elevation) | USGS Water Services API, gauge `02334400` (Buford Dam) | Free, no key, updates every 15 min, history back to Oct 2007 |
+| Lake level (elevation) | USGS Water Services API, gauge `02334400` (Buford Dam), parameter `00062` | Free, no key, updates every 15 min, history back to Oct 2007. Endpoint redirects http→https (HSTS) — device must use https. This gauge has no water-temp parameter, so the "lake temp" C-priority item will need a different source. |
 | Inflow | USGS gauges on Chattahoochee/Chestatee tributaries | Same API family as lake level, same reliability, "calculated" via stage-discharge rating curves |
 | Outflow | USACE CWMS API (`cwms-data.usace.army.mil`) | Different API than USGS. Current data reliable; historical data has known gaps/pagination issues per USACE's own developer forum — treat historical outflow as a stretch goal, not v1 |
 | Precipitation | USACE CWMS | Same caveats as outflow |
@@ -36,6 +36,8 @@ Known constraint: at 400×300 this layout is near its practical limit. If real A
 - **Dev tools:** Claude Code (terminal) + `arduino-cli` (compiles/flashes) — chosen over the graphical Arduino IDE or a cloud editor, to match existing Git/terminal workflow
 - **Version control:** GitHub, same pattern as prior projects (Crater, TrackDay)
 - **WiFi credentials:** kept out of git via a `secrets.h` per sketch (gitignored), copied from a checked-in `secrets.h.example` template. `secrets.h` holds a `WIFI_NETWORKS[]` list of `{ssid, password}` pairs; `WiFiMulti` tries all of them and joins whichever is in range. This is intentional for the eventual gift use case — home network now, in-laws' network can be added as a second entry later with no code changes.
+- **HTTPS calls:** USGS's endpoint forces https (redirects with HSTS), so device-side fetches use `WiFiClientSecure` with `setInsecure()` (skips CA validation) rather than pinning a root cert — acceptable for this prototype's scope, revisit if that changes.
+- **Flash usage watchpoint:** `firmware/lake_level/lake_level.ino` (WiFi + TLS + ArduinoJson + GxEPD2 + fonts, all together) already uses ~92% of the ESP32's 1.3MB program flash. Worth checking `arduino-cli compile` output as more features get layered in — may need to trim unused fonts/libraries later if it gets tight.
 
 ## Background on the person building this
 Self-taught developer, comfortable with Git/GitHub/Terminal, has built full-stack apps before (Node/Express/PostgreSQL, GitHub Actions automation) but this is a first embedded/hardware project — C++ and the Arduino toolchain are new territory. Prefers direct, unadorned writing style — no filler intensifiers.
@@ -44,9 +46,9 @@ Self-taught developer, comfortable with Git/GitHub/Terminal, has built full-stac
 - ✅ Repo created and pushed: `github.com/nkljucaric/lake-lanier-display`
 - ✅ Milestone 1 (hardware bring-up) complete: `firmware/hello_world/hello_world.ino` flashes via `arduino-cli` and renders text on the physical panel. No WiFi/API code in it — proves panel, driver board, wiring, A/B switch, and toolchain all work together.
 - ✅ Milestone 2 (WiFi connect) complete: `firmware/wifi_connect/wifi_connect.ino` joins WiFi via `WiFiMulti` (see `secrets.h` pattern under Software stack), prints the local IP, and does a plain HTTP GET to confirm real internet reachability, not just AP association. Confirmed working on the home network — got an IP and an HTTP 200.
-- ⬜ Milestone 3 (next up): pre-test the USGS Water Services API endpoint outside the device before writing any device-side parsing.
+- ✅ Milestone 3 (USGS API pre-test) complete: curled the endpoint directly, found parameter `00062` for elevation and the exact JSON path (`value.timeSeries[0].values[0].value[0].value`) — see Data sources table.
+- ✅ Milestone 4 (lake level on screen) complete: `firmware/lake_level/lake_level.ino` joins WiFi, fetches elevation over HTTPS, parses it with ArduinoJson, and renders the number on the panel. Confirmed working on the physical panel.
+- ⬜ Milestone 5 (next up): layer in inflow/outflow/weather per the A/B/C priority tiers, and build out the full 400×300 layout.
 
 ## Immediate next steps (where this brief picks up)
-1. Pre-test the USGS Water Services API endpoint (gauge `02334400`) outside the device first (curl or browser) to see real JSON structure before parsing it in C++.
-2. Pull lake level → parse with ArduinoJson → render the number on screen (still separate from the full layout).
-3. Then layer in inflow/outflow/weather per the priority tiers above, and build out the full 400×300 layout.
+1. Layer in inflow/outflow/weather per the priority tiers above, and build out the full 400×300 layout (title, date, elevation, delta from full pool, sparkline, weather, etc.).
