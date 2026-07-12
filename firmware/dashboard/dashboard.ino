@@ -405,6 +405,25 @@ void printRightAligned(const char *s, int rightX, int y, const GFXfont *font)
   display.print(s);
 }
 
+void printCentered(const char *s, int centerX, int y, const GFXfont *font)
+{
+  display.setFont(font);
+  int16_t x1, y1;
+  uint16_t w, h;
+  display.getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
+  display.setCursor(centerX - w / 2, y);
+  display.print(s);
+}
+
+uint16_t textWidth(const GFXfont *font, const char *s)
+{
+  display.setFont(font);
+  int16_t x1, y1;
+  uint16_t w, h;
+  display.getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
+  return w;
+}
+
 void drawSparkline(const float *values, int count, int x, int y, int w, int h)
 {
   if (count < 2)
@@ -432,6 +451,7 @@ void drawSparkline(const float *values, int count, int x, int y, int w, int h)
     int px = x + (int)((float)i / (count - 1) * w);
     int py = y + h - (int)((values[i] - minV) / (maxV - minV) * h);
     display.drawLine(prevX, prevY, px, py, GxEPD_BLACK);
+    display.drawLine(prevX, prevY + 1, px, py + 1, GxEPD_BLACK); // 2px thick
     prevX = px;
     prevY = py;
   }
@@ -460,9 +480,7 @@ void renderDashboard(const DashboardData &d)
     printRightAligned(d.dateStr, 390, 22, &FreeMonoBold9pt7b);
     display.drawLine(10, 30, 390, 30, GxEPD_BLACK);
 
-    // --- A priority: elevation ---
-    display.setFont(&FreeMonoBold24pt7b);
-    display.setCursor(10, 80);
+    // --- A priority: elevation (all centered) ---
     if (d.haveElevation)
     {
       snprintf(buf, sizeof(buf), "%.2f", d.elevation);
@@ -471,12 +489,16 @@ void renderDashboard(const DashboardData &d)
     {
       snprintf(buf, sizeof(buf), "--.--");
     }
-    display.print(buf);
-    display.setFont(&FreeMonoBold12pt7b);
-    display.print(" ft");
+    {
+      uint16_t numW = textWidth(&FreeMonoBold24pt7b, buf);
+      uint16_t unitW = textWidth(&FreeMonoBold12pt7b, " ft");
+      display.setCursor(200 - (numW + unitW) / 2, 74);
+      display.setFont(&FreeMonoBold24pt7b);
+      display.print(buf);
+      display.setFont(&FreeMonoBold12pt7b);
+      display.print(" ft");
+    }
 
-    display.setFont(&FreeMonoBold9pt7b);
-    display.setCursor(10, 100);
     if (d.haveElevation)
     {
       float delta = d.elevation - d.fullPoolFt;
@@ -486,9 +508,8 @@ void renderDashboard(const DashboardData &d)
     {
       snprintf(buf, sizeof(buf), "vs full pool");
     }
-    display.print(buf);
+    printCentered(buf, 200, 98, &FreeMonoBold12pt7b);
 
-    display.setCursor(10, 120);
     if (d.haveElevation && d.haveSeasonalAvg)
     {
       float delta = d.elevation - d.seasonalAvgFt;
@@ -498,7 +519,7 @@ void renderDashboard(const DashboardData &d)
     {
       snprintf(buf, sizeof(buf), "vs average for this time of year");
     }
-    display.print(buf);
+    printCentered(buf, 200, 120, &FreeMonoBold12pt7b);
 
     display.drawLine(10, 128, 390, 128, GxEPD_BLACK);
 
@@ -511,45 +532,43 @@ void renderDashboard(const DashboardData &d)
       drawSparkline(d.history, d.historyCount, 10, 150, 380, 28);
     }
 
-    display.drawLine(10, 186, 390, 186, GxEPD_BLACK);
+    display.drawLine(10, 192, 390, 192, GxEPD_BLACK);
 
     // --- B priority: inflow / outflow / rain 24h ---
     display.setFont(&FreeMonoBold9pt7b);
-    display.setCursor(10, 202);
+    display.setCursor(10, 208);
     display.print("INFLOW");
-    display.setCursor(150, 202);
+    display.setCursor(150, 208);
     display.print("OUTFLOW");
-    display.setCursor(290, 202);
+    display.setCursor(290, 208);
     display.print("RAIN 24H");
 
     display.setFont(&FreeMonoBold12pt7b);
-    display.setCursor(10, 224);
+    display.setCursor(10, 230);
     display.print(d.haveInflow ? String((int)d.inflow) + " cfs" : String("-- cfs"));
-    display.setCursor(150, 224);
+    display.setCursor(150, 230);
     display.print(d.haveOutflow ? String((int)d.outflow) + " cfs" : String("-- cfs"));
-    display.setCursor(290, 224);
+    display.setCursor(290, 230);
     display.print(d.haveWeather ? String(d.rain24hIn, 2) + " in" : String("-- in"));
 
-    display.drawLine(10, 234, 390, 234, GxEPD_BLACK);
+    display.drawLine(10, 240, 390, 240, GxEPD_BLACK);
 
-    // --- C priority: today's + tomorrow's weather (stacked) ---
+    // --- C priority: today's + tomorrow's precipitation forecast, side by side ---
     display.setFont(&FreeMonoBold12pt7b);
-    display.setCursor(10, 250);
+    display.setCursor(10, 264);
     display.print("TODAY ");
     display.setFont(&FreeMonoBold9pt7b);
     display.print(d.haveWeather ? weatherCodeToText(d.todayCode) : "--");
 
     display.setFont(&FreeMonoBold12pt7b);
-    display.setCursor(10, 270);
-    display.print("TOMORROW ");
+    display.setCursor(205, 264);
+    display.print("TMRW ");
     display.setFont(&FreeMonoBold9pt7b);
     display.print(d.haveWeather ? weatherCodeToText(d.tomorrowCode) : "--");
 
     // --- Footer ---
-    display.setFont(&FreeMonoBold9pt7b);
-    display.setCursor(10, 290);
     snprintf(buf, sizeof(buf), "Updated %s", d.updatedStr);
-    display.print(buf);
+    printCentered(buf, 200, 291, &FreeMonoBold9pt7b);
 
   } while (display.nextPage());
 
