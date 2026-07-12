@@ -4,10 +4,9 @@
 // Hardware: Waveshare 4.2" e-Paper (400x300, B/W) on Waveshare's
 // Universal e-Paper Driver Board (onboard ESP32).
 //
-// Panel driver: GxEPD2_420 assumes the GDEW042T2 (UC8176/IL0398) panel,
-// the common Waveshare 4.2" V1/V2 panel. If the panel that arrives is
-// labeled otherwise, swap GxEPD2_420 below for the matching class in
-// GxEPD2_WS_ESP32_Driver.ino's panel list.
+// Panel: labeled 042BN-T81-D2, V2 -> Good Display GDEY042T81 (SSD1683,
+// no inking). Uses GxEPD2_420_GDEY042T81 below, not GxEPD2_420 (that
+// class is for the older GDEW042T2/UC8176 panel).
 //
 // Pin mapping and HSPI remap are fixed by the driver board's PCB
 // (Waveshare: BUSY=25, RST=26, DC=27, CS=15, CLK=13, DIN=14).
@@ -15,8 +14,8 @@
 #include <GxEPD2_BW.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
 
-GxEPD2_BW<GxEPD2_420, GxEPD2_420::HEIGHT> display(
-    GxEPD2_420(/*CS=*/15, /*DC=*/27, /*RST=*/26, /*BUSY=*/25));
+GxEPD2_BW<GxEPD2_420_GDEY042T81, GxEPD2_420_GDEY042T81::HEIGHT> display(
+    GxEPD2_420_GDEY042T81(/*CS=*/15, /*DC=*/27, /*RST=*/26, /*BUSY=*/25));
 
 SPIClass hspi(HSPI);
 
