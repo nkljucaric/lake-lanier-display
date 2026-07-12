@@ -17,11 +17,18 @@
 //
 // Display/pin setup and WiFi join mirror firmware/lake_level/lake_level.ino.
 //
+// Refresh: stays on WiFi and re-fetches/re-renders every
+// REFRESH_INTERVAL_MS (15 min, matching how often USGS elevation
+// updates upstream) rather than deep-sleeping between refreshes - this
+// sketch is USB-powered for now, so there's no battery reason to sleep,
+// and staying connected avoids paying WiFi-reconnect + NTP-resync
+// latency every cycle. Revisit with deep sleep if this moves to battery.
+//
 // Flash note: this sketch compiles to 94% of the default 1.2MB app
 // partition - too little headroom for future work (bigger panel, more
 // fonts/icons). Build with PartitionScheme=huge_app (3MB app, no OTA -
-// fine for a one-shot fetch-and-render sketch) instead, which brings it
-// down to 39%:
+// fine since this sketch is reflashed over USB, not updated remotely)
+// instead, which brings it down to 39%:
 //   arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=huge_app firmware/dashboard
 //   arduino-cli upload --fqbn esp32:esp32:esp32:PartitionScheme=huge_app -p <port> firmware/dashboard
 
@@ -575,15 +582,13 @@ void renderDashboard(const DashboardData &d)
   display.hibernate();
 }
 
-void setup()
+// USGS elevation updates every 15 min upstream - no point refreshing
+// faster than the data itself changes.
+const unsigned long REFRESH_INTERVAL_MS = 15UL * 60UL * 1000UL;
+unsigned long lastRefresh = 0;
+
+void refreshDashboard()
 {
-  Serial.begin(115200);
-  delay(1000);
-  Serial.println("dashboard: starting");
-
-  connectWiFi();
-  syncTime();
-
   DashboardData data;
   struct tm timeinfo;
   bool haveTime = getLocalTime(&timeinfo);
@@ -629,7 +634,32 @@ void setup()
   renderDashboard(data);
 }
 
+void setup()
+{
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("dashboard: starting");
+
+  connectWiFi();
+  syncTime();
+
+  refreshDashboard();
+  lastRefresh = millis();
+}
+
 void loop()
 {
-  // nothing to do - one-shot fetch and render
+  if (millis() - lastRefresh < REFRESH_INTERVAL_MS)
+  {
+    delay(1000);
+    return;
+  }
+
+  Serial.println("dashboard: refreshing");
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    connectWiFi();
+  }
+  refreshDashboard();
+  lastRefresh = millis();
 }
