@@ -3,11 +3,13 @@
 ## What this is
 A desk display that shows live Lake Lanier water level, trend, inflow/outflow, and weather, built on an ESP32 + e-paper panel. First hardware prototype, "play around and learn" scope — not a polished product yet. Inspired by lakelanierwater.com; the goal is a filtered, physical version of that dashboard.
 
-## Hardware (ordered)
-- **Display:** Waveshare 4.2" e-Paper raw display (no PCB), 400×300, black/white, SPI, FPC cable
-- **Driver board:** Waveshare Universal e-Paper Driver Board with ESP32 onboard (WiFi/Bluetooth SoC built in — this is the microcontroller, no separate board needed)
-- Panel connects directly to the driver board's FPC connector. Confirm driver board is V2.1+ (supports both 3.3V and 5V) — check for the 20-pin chip on the board when it arrives.
-- Set the physical A/B switch on the driver board to match the panel (use "A" if 4.2" isn't explicitly labeled).
+## Hardware (confirmed working)
+- **Display:** Waveshare 4.2" e-Paper raw display (no PCB), 400×300, black/white, SPI, FPC cable. Panel arrived labeled `042BN-T81-D2, V2` — identified as Good Display **GDEY042T81** (SSD1683 driver, no inking). GxEPD2 driver class in code: `GxEPD2_420_GDEY042T81` (not `GxEPD2_420`, which is for the older GDEW042T2/UC8176 panel).
+- **Driver board:** Waveshare Universal e-Paper Driver Board with ESP32 onboard (chip identifies as ESP32-D0WD-V3 via esptool). WiFi/Bluetooth SoC built in — this is the microcontroller, no separate board needed.
+- Panel connects directly to the driver board's FPC connector.
+- A/B switch: confirmed **A** is correct for this panel (board shipped set to B; flipped to A, first flash rendered correctly).
+- Pin mapping (fixed by board PCB): BUSY=25, RST=26, DC=27, CS=15, CLK=13, DIN=14. Requires HSPI remap in code (Waveshare's driver board uses non-standard SPI pins) — see `firmware/hello_world/hello_world.ino`.
+- FQBN for arduino-cli: `esp32:esp32:esp32` ("ESP32 Dev Module" — no dedicated Waveshare entry for this plain-ESP32 driver board).
 - Power: plugged in via USB-C for this prototype (battery explicitly deferred — driver board's stock deep-sleep draw is too high, ~10-13mA, for meaningful battery life without bypassing the board's own power management; revisit later with a bare low-power ESP32 if battery becomes a priority)
 - Screen size: started at 5.83" (648×480), downsized to 4.2" (400×300) for cost/prototyping. Architecture is designed to scale up later — same driver board family, same code structure, just a bigger panel and larger layout when ready.
 
@@ -36,8 +38,13 @@ Known constraint: at 400×300 this layout is near its practical limit. If real A
 ## Background on the person building this
 Self-taught developer, comfortable with Git/GitHub/Terminal, has built full-stack apps before (Node/Express/PostgreSQL, GitHub Actions automation) but this is a first embedded/hardware project — C++ and the Arduino toolchain are new territory. Prefers direct, unadorned writing style — no filler intensifiers.
 
+## Progress
+- ✅ Repo created and pushed: `github.com/nkljucaric/lake-lanier-display`
+- ✅ Milestone 1 (hardware bring-up) complete: `firmware/hello_world/hello_world.ino` flashes via `arduino-cli` and renders text on the physical panel. No WiFi/API code in it — proves panel, driver board, wiring, A/B switch, and toolchain all work together.
+- ⬜ Milestone 2 (next up): WiFi connect. Get the ESP32 joining the network and confirm it can reach the internet — before touching the USGS API itself.
+
 ## Immediate next steps (where this brief picks up)
-1. Get comfortable with basic terminal navigation (pwd/cd/ls/mkdir) — coming from a VS Code-integrated-terminal-only background
-2. First milestone: get *any* text rendering on the physical panel via a basic GxEPD2 example sketch — before touching WiFi or API calls at all. Isolates hardware/wiring issues from software issues.
-3. Pre-test API endpoints outside the device first (curl or browser) to see real JSON structure before parsing it in C++
-4. Then: WiFi connect → pull lake level → render on screen → layer in inflow/outflow/weather per the priority tiers above
+1. WiFi connect sketch: join the network, confirm connectivity (e.g. print local IP / hit a known-good URL), no API parsing yet.
+2. Pre-test the USGS Water Services API endpoint (gauge `02334400`) outside the device first (curl or browser) to see real JSON structure before parsing it in C++.
+3. Pull lake level → parse with ArduinoJson → render the number on screen (still separate from the full layout).
+4. Then layer in inflow/outflow/weather per the priority tiers above, and build out the full 400×300 layout.
