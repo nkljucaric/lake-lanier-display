@@ -84,8 +84,6 @@ struct DashboardData
   float outflow = 0;
 
   bool haveWeather = false;
-  int todayCode = 0;
-  int tomorrowCode = 0;
   float rain24hIn = 0;
 
   bool haveSeasonalAvg = false;
@@ -102,58 +100,6 @@ struct DashboardData
 float fullPoolForMonth(int monthIndex)
 {
   return (monthIndex >= 4 && monthIndex <= 10) ? 1071.0 : 1070.0;
-}
-
-const char *weatherCodeToText(int code)
-{
-  switch (code)
-  {
-  case 0:
-    return "Clear";
-  case 1:
-    return "Mostly Clear";
-  case 2:
-    return "Partly Cloudy";
-  case 3:
-    return "Overcast";
-  case 45:
-  case 48:
-    return "Fog";
-  case 51:
-  case 53:
-  case 55:
-    return "Drizzle";
-  case 56:
-  case 57:
-    return "Fz Drizzle";
-  case 61:
-  case 63:
-  case 65:
-    return "Rain";
-  case 66:
-  case 67:
-    return "Fz Rain";
-  case 71:
-  case 73:
-  case 75:
-    return "Snow";
-  case 77:
-    return "Snow Grains";
-  case 80:
-  case 81:
-  case 82:
-    return "Showers";
-  case 85:
-  case 86:
-    return "Snow Showers";
-  case 95:
-    return "T-Storms";
-  case 96:
-  case 99:
-    return "T-Storms/Hail";
-  default:
-    return "Unknown";
-  }
 }
 
 void connectWiFi()
@@ -310,9 +256,9 @@ bool fetchWeather(DashboardData &d)
 {
   String url = "https://api.open-meteo.com/v1/forecast?latitude=" + String(LAKE_LAT, 4) +
                "&longitude=" + String(LAKE_LON, 4) +
-               "&daily=weather_code,precipitation_sum" +
+               "&daily=precipitation_sum" +
                "&precipitation_unit=inch" +
-               "&timezone=America%2FNew_York&past_days=1&forecast_days=2";
+               "&timezone=America%2FNew_York&past_days=1&forecast_days=0";
 
   JsonDocument doc;
   if (!httpGetJson(url.c_str(), doc))
@@ -320,17 +266,13 @@ bool fetchWeather(DashboardData &d)
     return false;
   }
 
-  JsonArray dailyCode = doc["daily"]["weather_code"];
   JsonArray dailyRain = doc["daily"]["precipitation_sum"];
-  // past_days=1 + forecast_days=2 -> [yesterday, today, tomorrow]
-  if (dailyCode.size() < 3)
+  if (dailyRain.size() < 1)
   {
     return false;
   }
 
   d.rain24hIn = dailyRain[0].as<float>();
-  d.todayCode = dailyCode[1].as<int>();
-  d.tomorrowCode = dailyCode[2].as<int>();
   d.haveWeather = true;
   return true;
 }
@@ -431,6 +373,53 @@ uint16_t textWidth(const GFXfont *font, const char *s)
   return w;
 }
 
+// Draws `value` immediately followed by `label`, centered together as one
+// unit, with `value` overdrawn at a 1px horizontal offset to thicken its
+// strokes. The installed fonts have no separate heavy/black weight, so this
+// is how the delta numbers stand out as "bold" against the label text next
+// to them (which uses this same Bold-named font family, like everything
+// else on this display).
+// Draws a monospace string one glyph at a time with a fixed per-character
+// advance, instead of the font's own (larger) xAdvance. Adafruit_GFX only
+// supports whole-number size multipliers (1x, 2x, ...), so this is how the
+// enlarged elevation number - 2x the 24pt font - is tightened just enough
+// to fit two decimal places without stretching past the panel width.
+// Returns the total width drawn, for centering.
+uint16_t drawCondensedMono(int x, int y, const char *s, const GFXfont *font, uint8_t size, uint16_t advancePx)
+{
+  display.setFont(font);
+  display.setTextSize(size);
+  int cursorX = x;
+  char glyph[2] = {0, 0};
+  for (const char *p = s; *p; p++)
+  {
+    glyph[0] = *p;
+    display.setCursor(cursorX, y);
+    display.print(glyph);
+    cursorX += advancePx;
+  }
+  display.setTextSize(1);
+  return cursorX - x;
+}
+
+void printCenteredBoldValue(const char *value, const char *label, int centerX, int y, const GFXfont *font)
+{
+  display.setFont(font);
+  uint16_t valueW = value[0] ? textWidth(font, value) : 0;
+  uint16_t labelW = textWidth(font, label);
+  int x = centerX - (valueW + labelW) / 2;
+
+  if (value[0])
+  {
+    display.setCursor(x, y);
+    display.print(value);
+    display.setCursor(x + 1, y);
+    display.print(value);
+  }
+  display.setCursor(x + valueW, y);
+  display.print(label);
+}
+
 void drawSparkline(const float *values, int count, int x, int y, int w, int h)
 {
   if (count < 2)
@@ -464,6 +453,25 @@ void drawSparkline(const float *values, int count, int x, int y, int w, int h)
   }
 }
 
+// Small filled triangle centered above the "ft" unit label - there's a
+// large gap there between the header divider and the unit text's own top
+// edge, since the unit stays at normal size while the number next to it
+// is enlarged. Doesn't touch any existing cursor/layout state.
+void drawTrendArrow(int centerX, bool up)
+{
+  const int halfW = 7;
+  const int topY = 54;
+  const int botY = 70;
+  if (up)
+  {
+    display.fillTriangle(centerX, topY, centerX - halfW, botY, centerX + halfW, botY, GxEPD_BLACK);
+  }
+  else
+  {
+    display.fillTriangle(centerX, botY, centerX - halfW, topY, centerX + halfW, topY, GxEPD_BLACK);
+  }
+}
+
 void renderDashboard(const DashboardData &d)
 {
   hspi.begin(13, 12, 14, 15);
@@ -488,6 +496,10 @@ void renderDashboard(const DashboardData &d)
     display.drawLine(10, 30, 390, 30, GxEPD_BLACK);
 
     // --- A priority: elevation (all centered) ---
+    // Enlarged 2x (24pt is the largest Free* font installed) - the extra
+    // vertical room comes from dropping the today/tomorrow weather block
+    // that used to sit above the footer. Drawn condensed (see
+    // drawCondensedMono) so two decimal places fit at this size.
     if (d.haveElevation)
     {
       snprintf(buf, sizeof(buf), "%.2f", d.elevation);
@@ -497,81 +509,89 @@ void renderDashboard(const DashboardData &d)
       snprintf(buf, sizeof(buf), "--.--");
     }
     {
-      uint16_t numW = textWidth(&FreeMonoBold24pt7b, buf);
+      const uint16_t NUM_ADVANCE_PX = 46;
+      uint16_t numW = strlen(buf) * NUM_ADVANCE_PX;
       uint16_t unitW = textWidth(&FreeMonoBold12pt7b, " ft");
-      display.setCursor(200 - (numW + unitW) / 2, 74);
-      display.setFont(&FreeMonoBold24pt7b);
-      display.print(buf);
+      int x = 200 - (numW + unitW) / 2;
+
+      drawCondensedMono(x, 96, buf, &FreeMonoBold24pt7b, 2, NUM_ADVANCE_PX);
       display.setFont(&FreeMonoBold12pt7b);
+      display.setCursor(x + numW, 96);
       display.print(" ft");
+
+      // Trend arrow vs. yesterday's daily-mean elevation (the most recent
+      // entry in the 30-day history) - +/-0.03 ft is the deadband below
+      // which we call it flat rather than up/down.
+      if (d.haveElevation && d.haveHistory && d.historyCount >= 1)
+      {
+        float yesterday = d.history[d.historyCount - 1];
+        float diff = d.elevation - yesterday;
+        if (diff >= 0.03 || diff <= -0.03)
+        {
+          drawTrendArrow(x + numW + unitW / 2, diff >= 0.03);
+        }
+      }
     }
 
+    char valueBuf[16];
+    char labelBuf[32];
     if (d.haveElevation)
     {
       float delta = d.elevation - d.fullPoolFt;
-      snprintf(buf, sizeof(buf), "%+.2f ft vs full pool", delta);
+      snprintf(valueBuf, sizeof(valueBuf), "%+.2f", delta);
+      snprintf(labelBuf, sizeof(labelBuf), " ft vs full pool");
     }
     else
     {
-      snprintf(buf, sizeof(buf), "vs full pool");
+      valueBuf[0] = '\0';
+      snprintf(labelBuf, sizeof(labelBuf), "vs full pool");
     }
-    printCentered(buf, 200, 98, &FreeMonoBold12pt7b);
+    printCenteredBoldValue(valueBuf, labelBuf, 200, 122, &FreeMonoBold12pt7b);
 
     if (d.haveElevation && d.haveSeasonalAvg)
     {
       float delta = d.elevation - d.seasonalAvgFt;
-      snprintf(buf, sizeof(buf), "%+.2f ft vs %s avg", delta, d.shortDateStr);
+      snprintf(valueBuf, sizeof(valueBuf), "%+.2f", delta);
+      snprintf(labelBuf, sizeof(labelBuf), " ft vs %s avg", d.shortDateStr);
     }
     else
     {
-      snprintf(buf, sizeof(buf), "vs average for this time of year");
+      valueBuf[0] = '\0';
+      snprintf(labelBuf, sizeof(labelBuf), "vs average for this time of year");
     }
-    printCentered(buf, 200, 120, &FreeMonoBold12pt7b);
+    printCenteredBoldValue(valueBuf, labelBuf, 200, 144, &FreeMonoBold12pt7b);
 
-    display.drawLine(10, 128, 390, 128, GxEPD_BLACK);
+    display.drawLine(10, 152, 390, 152, GxEPD_BLACK);
 
     // --- 30-day sparkline ---
+    // Taller than it used to be - the 20px came from shifting the B
+    // priority block below down, since it had slack above the footer.
     display.setFont(&FreeMonoBold9pt7b);
-    display.setCursor(10, 142);
+    display.setCursor(10, 166);
     display.print("30-DAY TREND");
     if (d.haveHistory)
     {
-      drawSparkline(d.history, d.historyCount, 10, 150, 380, 28);
+      drawSparkline(d.history, d.historyCount, 10, 174, 380, 48);
     }
 
-    display.drawLine(10, 192, 390, 192, GxEPD_BLACK);
+    display.drawLine(10, 236, 390, 236, GxEPD_BLACK);
 
     // --- B priority: inflow / outflow / rain 24h ---
     display.setFont(&FreeMonoBold9pt7b);
-    display.setCursor(10, 208);
+    display.setCursor(10, 252);
     display.print("INFLOW");
-    display.setCursor(150, 208);
+    display.setCursor(150, 252);
     display.print("OUTFLOW");
-    display.setCursor(290, 208);
+    display.setCursor(290, 252);
     display.print("RAIN 24H");
 
     display.setFont(&FreeMonoBold12pt7b);
-    display.setCursor(10, 230);
+    display.setCursor(10, 274);
     display.print(d.haveInflow ? String((int)d.inflow) + " cfs" : String("-- cfs"));
-    display.setCursor(150, 230);
+    display.setCursor(150, 274);
     display.print(d.haveOutflow ? String((int)d.outflow) + " cfs" : String("-- cfs"));
-    display.setCursor(290, 230);
+    display.setCursor(290, 274);
     display.print(d.haveWeather ? String(d.rain24hIn, 2) + " in" : String("-- in"));
-
-    display.drawLine(10, 240, 390, 240, GxEPD_BLACK);
-
-    // --- C priority: today's + tomorrow's precipitation forecast, side by side ---
-    display.setFont(&FreeMonoBold12pt7b);
-    display.setCursor(10, 264);
-    display.print("TODAY ");
-    display.setFont(&FreeMonoBold9pt7b);
-    display.print(d.haveWeather ? weatherCodeToText(d.todayCode) : "--");
-
-    display.setFont(&FreeMonoBold12pt7b);
-    display.setCursor(205, 264);
-    display.print("TMRW ");
-    display.setFont(&FreeMonoBold9pt7b);
-    display.print(d.haveWeather ? weatherCodeToText(d.tomorrowCode) : "--");
 
     // --- Footer ---
     snprintf(buf, sizeof(buf), "Updated %s", d.updatedStr);
